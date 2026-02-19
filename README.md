@@ -1,22 +1,71 @@
-## GCO Feb 26: The Tri-Tier Chatbot (CLI)
+# TechGear UK — Tri-Tier Chatbot (CLI)
 
-# Objective
-Build a Console Application that functions as an intelligent chatbot.
+A Java console chatbot that answers customer queries using three tiers:
 
-# Core Requirements
-1. Console Interface: The app must run in a continuous terminal loop.
-2. Knowledge Base (KB): Answer static questions using knowledge_base.txt.
-3. Database (DB): Answer inventory questions by querying inventory.db via Function/Tool Calling.
-4. Fallback: For any query not in the KB or DB, return: "I'm sorry, I cannot answer your query at the moment."
+| Tier | Source | Example |
+|------|--------|---------|
+| **Knowledge Base** | `knowledge_base.txt` | Office address, opening hours, delivery costs |
+| **Database** | `inventory.db` (SQLite) | Stock levels, product prices |
+| **Fallback** | Static message | Anything outside the above two domains |
 
-# Environment & Constraints
-Database: Use the provided inventory.db (SQLite) located in the root directory. If the .db file is missing or corrupted, generate a fresh one using:
+Routing is handled by an OpenAI LLM with **function/tool calling** — the model decides which
+data source to query and extracts the required parameters automatically.
+
+## Prerequisites
+
+- **Java 17+**
+- **Apache Maven 3.8+**
+- An **Azure OpenAI API key** with access to the `gpt-4o-mini` deployment
+
+## Quick Start
+
+```bash
+# 1. Set your API key
+set AZURE_OPENAI_KEY=<your-key>
+
+# 2. Build the fat JAR
+mvn clean package -q
+
+# 3. Run the chatbot
+java -jar target/tri-tier-chatbot-1.0.0.jar
+```
+
+## Database Setup
+
+The application ships with `inventory.db`. If the file is missing or the table
+does not exist, the app will automatically create and seed it on first run.
+
+To regenerate manually:
+
+```bash
 sqlite3 inventory.db < inventory_setup.sql
-Pathing: Use a relative path (./inventory.db) for the connection string.
-Currency: All prices must be displayed in GBP (£).
-Language: Use UK English for all responses.
+```
 
-# Judging Criteria
-Accuracy: Does the bot route to the correct data source?
-Function Calling: Does the LLM correctly extract parameters (item name/size) for SQL?
-Clean Code: Adherence to best practices within the 2-hour limit.
+## Architecture
+
+```
+User Input
+    │
+    ▼
+LlmRouter  ──▶  Azure OpenAI (gpt-4o-mini) + tool definitions
+    │                    │
+    │         ┌──────────┴──────────┐
+    │         ▼                     ▼
+    │   search_knowledge_base  query_inventory
+    │         │                     │
+    │         ▼                     ▼
+    │   KnowledgeBase         InventoryDatabase
+    │   (text file)           (SQLite)
+    │         │                     │
+    │         └──────────┬──────────┘
+    │                    ▼
+    │         Tool result → LLM → final answer
+    │
+    ▼
+Console Output
+```
+
+- **ChatbotApp** — REPL loop and entry point
+- **KnowledgeBase** — Loads `knowledge_base.txt` and returns its content on tool call
+- **InventoryDatabase** — Connects to SQLite via JDBC; parameterised queries for stock/price
+- **LlmRouter** — Builds Azure OpenAI requests, dispatches tool calls, returns the final answer
